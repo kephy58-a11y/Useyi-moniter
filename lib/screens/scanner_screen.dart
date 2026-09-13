@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../models/student.dart';
@@ -12,9 +13,22 @@ class ScannerScreen extends StatefulWidget {
 }
 
 class _ScannerScreenState extends State<ScannerScreen> {
+  final controller = MobileScannerController();
   bool locked = false;
+  bool torchOn = false;
   String message = 'Point the camera at a student QR code.';
   Student? lastStudent;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> toggleTorch() async {
+    await controller.toggleTorch();
+    setState(() => torchOn = !torchOn);
+  }
 
   Future<void> handleCode(String? raw) async {
     if (locked || raw == null || raw.trim().isEmpty) return;
@@ -25,6 +39,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
     final student = AttendanceService.findStudent(id);
 
     if (student == null) {
+      HapticFeedback.heavyImpact();
       setState(() {
         message = 'Student ID $id was not found.';
         lastStudent = null;
@@ -41,6 +56,11 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
 
     final added = await AttendanceService.markPresent(student.id);
+    if (added) {
+      HapticFeedback.mediumImpact();
+    } else {
+      HapticFeedback.selectionClick();
+    }
 
     if (!mounted) return;
     setState(() {
@@ -62,7 +82,16 @@ class _ScannerScreenState extends State<ScannerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Scan Student')),
+      appBar: AppBar(
+        title: const Text('Scan Student'),
+        actions: [
+          IconButton(
+            tooltip: 'Toggle flashlight',
+            icon: Icon(torchOn ? Icons.flash_on : Icons.flash_off),
+            onPressed: toggleTorch,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -70,6 +99,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
               fit: StackFit.expand,
               children: [
                 MobileScanner(
+                  controller: controller,
                   onDetect: (capture) {
                     for (final barcode in capture.barcodes) {
                       handleCode(barcode.rawValue);
